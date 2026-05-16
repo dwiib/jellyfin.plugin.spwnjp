@@ -10,6 +10,26 @@ namespace Jellyfin.Plugin.Spwnjp.Core;
 /// </summary>
 public sealed class SpwnClient
 {
+    /// <summary>
+    /// CDP-readiness expression for the event-detail page: the cast section's <c>&lt;h3&gt;</c>
+    /// (one per performer) is the latest-rendered piece of metadata we parse, so its arrival
+    /// indicates the full DOM is in place. Events that genuinely have no performers will fall
+    /// through to the fetcher's best-effort timeout and still return everything else.
+    /// </summary>
+    private const string EventReadyExpression =
+        "document.querySelector('#act_info article h3')";
+
+    /// <summary>
+    /// CDP-readiness expression for the search-results page. Two cases to cover:
+    /// hits → the results <c>&lt;ul&gt;</c> with its stable aria-label is rendered;
+    /// no hits → there's no <c>&lt;ul&gt;</c>, but the page renders a "no search results"
+    /// string in Japanese inside <c>#container</c>. Either signals "search has completed."
+    /// </summary>
+    private const string SearchReadyExpression =
+        "document.querySelector('ul[aria-label=\"イベント検索結果一覧\"]')" +
+        " || (document.querySelector('#container')" +
+        " && document.querySelector('#container').innerText.includes('検索結果がありません'))";
+
     private readonly IPageFetcher _fetcher;
 
     /// <summary>
@@ -31,7 +51,7 @@ public sealed class SpwnClient
     public async Task<SpwnEvent> GetEventAsync(string eventId, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(eventId);
-        var page = await _fetcher.FetchHtmlAsync(Urls.EventUrl(eventId), ct).ConfigureAwait(false);
+        var page = await _fetcher.FetchHtmlAsync(Urls.EventUrl(eventId), EventReadyExpression, ct).ConfigureAwait(false);
         return EventPageParser.Parse(page.Html, eventId);
     }
 
@@ -44,7 +64,7 @@ public sealed class SpwnClient
     public async Task<IReadOnlyList<SpwnSearchResult>> SearchAsync(string keyword, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(keyword);
-        var page = await _fetcher.FetchHtmlAsync(Urls.SearchUrl(keyword), ct).ConfigureAwait(false);
+        var page = await _fetcher.FetchHtmlAsync(Urls.SearchUrl(keyword), SearchReadyExpression, ct).ConfigureAwait(false);
         return SearchPageParser.Parse(page.Html);
     }
 }

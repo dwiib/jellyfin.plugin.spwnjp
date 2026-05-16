@@ -31,7 +31,13 @@ public interface IPageFetcher
     /// Fetches the HTML for <paramref name="url"/>.
     /// </summary>
     /// <param name="url">The page URL.</param>
+    /// <param name="readyExpression">
+    /// Optional JavaScript expression that evaluates to <c>true</c> once the page has hydrated
+    /// enough to scrape. Used by the CDP backend to poll instead of sleeping; ignored by direct HTTP.
+    /// Pass <c>null</c> when fetching arbitrary URLs without a known readiness marker — the CDP
+    /// backend then falls back to a short fixed delay.
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The fetch result.</returns>
-    Task<PageFetchResult> FetchHtmlAsync(Uri url, CancellationToken ct = default);
+    Task<PageFetchResult> FetchHtmlAsync(Uri url, string? readyExpression = null, CancellationToken ct = default);
 }

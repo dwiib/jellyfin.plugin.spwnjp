@@ -11,16 +11,29 @@ namespace Jellyfin.Plugin.Spwnjp.Core;
 
 /// <summary>
 /// Fetches pages by driving a headless-shell instance over the Chrome DevTools Protocol:
-/// opens a new target on the URL, waits for the page to settle, evaluates
+/// opens a new target on the URL, waits for the page to hydrate, evaluates
 /// <c>document.documentElement.outerHTML</c> inside the target, then closes it.
 /// Used when the user has configured a headless-shell URL — needed for spwn.jp pages whose
 /// event data only appears post-render.
 /// </summary>
 public sealed class CdpPageFetcher : IPageFetcher
 {
-    // TODO: replace fixed delay with a Runtime.evaluate poll for the hero <img> element.
-    // Smoke test showed event content was missing at 4s and present at 12s on a cold cache.
-    private static readonly TimeSpan SettleDelay = TimeSpan.FromSeconds(12);
+    /// <summary>
+    /// Maximum wall-clock time to wait for a caller-supplied readiness expression to evaluate truthy.
+    /// When this elapses we capture <c>outerHTML</c> anyway — readiness is best-effort, not a hard
+    /// gate. The parser tolerates missing optional fields.
+    /// </summary>
+    private static readonly TimeSpan ReadyTimeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>Interval between readiness polls.</summary>
+    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>
+    /// Fallback wait used when the caller doesn't supply a readiness expression
+    /// (raw <c>fetch &lt;url&gt;</c> from the CLI). Long enough for most pages
+    /// to emit a load event; not long enough to fully hydrate a heavy SPA.
+    /// </summary>
+    private static readonly TimeSpan FallbackDelay = TimeSpan.FromSeconds(3);
 
     private readonly HttpClient _http;
     private readonly Uri _baseUrl;
@@ -39,7 +52,7 @@ public sealed class CdpPageFetcher : IPageFetcher
     }
 
     /// <inheritdoc/>
-    public async Task<PageFetchResult> FetchHtmlAsync(Uri url, CancellationToken ct = default)
+    public async Task<PageFetchResult> FetchHtmlAsync(Uri url, string? readyExpression = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(url);
         var sw = Stopwatch.StartNew();
@@ -51,7 +64,22 @@ public sealed class CdpPageFetcher : IPageFetcher
             using var ws = new ClientWebSocket();
             await ws.ConnectAsync(wsUri, ct).ConfigureAwait(false);
 
-            await Task.Delay(SettleDelay, ct).ConfigureAwait(false);
+            if (readyExpression is null)
+            {
+                await Task.Delay(FallbackDelay, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                try
+                {
+                    await WaitUntilReadyAsync(ws, readyExpression, ct).ConfigureAwait(false);
+                }
+                catch (TimeoutException)
+                {
+                    // Readiness is best-effort. Fall through and capture whatever's in the DOM
+                    // so e.g. an event without performers still returns the rest of the metadata.
+                }
+            }
 
             var html = await EvaluateOuterHtmlAsync(ws, ct).ConfigureAwait(false);
 
@@ -108,6 +136,59 @@ public sealed class CdpPageFetcher : IPageFetcher
         }.Uri;
     }
 
+    private static async Task WaitUntilReadyAsync(ClientWebSocket ws, string readyExpression, CancellationToken ct)
+    {
+        // Wrap the caller's expression in a try/catch so a parse error in the page
+        // (querySelector throwing on bad input, etc.) doesn't kill the whole fetch.
+        var wrapped = $"(function(){{ try {{ return !!({readyExpression}); }} catch (e) {{ return false; }} }})()";
+        var deadline = Stopwatch.GetTimestamp() + (long)(ReadyTimeout.TotalSeconds * Stopwatch.Frequency);
+        var requestId = 100;
+        while (true)
+        {
+            var ready = await EvaluateBooleanAsync(ws, requestId++, wrapped, ct).ConfigureAwait(false);
+            if (ready)
+            {
+                return;
+            }
+
+            if (Stopwatch.GetTimestamp() >= deadline)
+            {
+                throw new TimeoutException(
+                    $"CDP readiness expression did not become true within {ReadyTimeout.TotalSeconds}s: {readyExpression}");
+            }
+
+            await Task.Delay(PollInterval, ct).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<bool> EvaluateBooleanAsync(ClientWebSocket ws, int requestId, string expression, CancellationToken ct)
+    {
+        var payload = JsonSerializer.SerializeToUtf8Bytes(new CdpRequest(
+            requestId,
+            "Runtime.evaluate",
+            new CdpEvaluateParams(expression, ReturnByValue: true)));
+        await ws.SendAsync(payload, WebSocketMessageType.Text, endOfMessage: true, ct).ConfigureAwait(false);
+
+        var raw = await WaitForResponseAsync(ws, requestId, ct).ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(raw);
+        var root = doc.RootElement;
+        if (root.TryGetProperty("error", out _))
+        {
+            // Treat evaluation errors as "not ready yet" rather than fatal — the page
+            // may still be loading the symbols our expression references.
+            return false;
+        }
+
+        if (root.TryGetProperty("result", out var outer)
+            && outer.TryGetProperty("result", out var inner)
+            && inner.TryGetProperty("value", out var value))
+        {
+            return value.ValueKind == JsonValueKind.True;
+        }
+
+        return false;
+    }
+
     private static async Task<string> EvaluateOuterHtmlAsync(ClientWebSocket ws, CancellationToken ct)
     {
         const int RequestId = 1;
@@ -115,40 +196,43 @@ public sealed class CdpPageFetcher : IPageFetcher
             RequestId,
             "Runtime.evaluate",
             new CdpEvaluateParams("document.documentElement.outerHTML", ReturnByValue: true)));
-
         await ws.SendAsync(payload, WebSocketMessageType.Text, endOfMessage: true, ct).ConfigureAwait(false);
 
+        var raw = await WaitForResponseAsync(ws, RequestId, ct).ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(raw);
+        var root = doc.RootElement;
+        if (root.TryGetProperty("error", out var err))
+        {
+            throw new InvalidOperationException("CDP Runtime.evaluate failed: " + err.GetRawText());
+        }
+
+        if (root.TryGetProperty("result", out var outer)
+            && outer.TryGetProperty("result", out var inner)
+            && inner.TryGetProperty("value", out var value)
+            && value.ValueKind == JsonValueKind.String)
+        {
+            return value.GetString()!;
+        }
+
+        throw new InvalidOperationException("CDP Runtime.evaluate response shape unexpected: " + raw);
+    }
+
+    /// <summary>
+    /// Reads frames until one arrives whose <c>id</c> matches <paramref name="requestId"/>;
+    /// spontaneous CDP events (which have <c>method</c> but no matching <c>id</c>) are ignored.
+    /// </summary>
+    private static async Task<string> WaitForResponseAsync(ClientWebSocket ws, int requestId, CancellationToken ct)
+    {
         while (true)
         {
             var raw = await ReceiveTextMessageAsync(ws, ct).ConfigureAwait(false);
             using var doc = JsonDocument.Parse(raw);
-            var root = doc.RootElement;
-
-            if (!root.TryGetProperty("id", out var idProp) || idProp.ValueKind != JsonValueKind.Number)
+            if (doc.RootElement.TryGetProperty("id", out var idProp)
+                && idProp.ValueKind == JsonValueKind.Number
+                && idProp.GetInt32() == requestId)
             {
-                // Spontaneous CDP event (has "method" but no "id"). Ignore.
-                continue;
+                return raw;
             }
-
-            if (idProp.GetInt32() != RequestId)
-            {
-                continue;
-            }
-
-            if (root.TryGetProperty("error", out var err))
-            {
-                throw new InvalidOperationException("CDP Runtime.evaluate failed: " + err.GetRawText());
-            }
-
-            if (root.TryGetProperty("result", out var outer)
-                && outer.TryGetProperty("result", out var inner)
-                && inner.TryGetProperty("value", out var value)
-                && value.ValueKind == JsonValueKind.String)
-            {
-                return value.GetString()!;
-            }
-
-            throw new InvalidOperationException("CDP Runtime.evaluate response shape unexpected: " + raw);
         }
     }
 

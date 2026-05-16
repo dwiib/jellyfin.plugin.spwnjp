@@ -22,9 +22,15 @@ public sealed class DirectPageFetcher : IPageFetcher
     }
 
     /// <inheritdoc/>
-    public async Task<PageFetchResult> FetchHtmlAsync(Uri url, CancellationToken ct = default)
+    /// <remarks>
+    /// The <paramref name="readyExpression"/> parameter is ignored — a direct HTTP fetch
+    /// returns whatever the server emits in a single response, with no opportunity to wait
+    /// for client-side rendering.
+    /// </remarks>
+    public async Task<PageFetchResult> FetchHtmlAsync(Uri url, string? readyExpression = null, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(url);
+        _ = readyExpression;
         var sw = Stopwatch.StartNew();
         using var response = await _http.GetAsync(url, ct).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
