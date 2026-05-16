@@ -6,11 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Jellyfin server plugin that acts as a **metadata provider for [spwn.jp](https://spwn.jp) events** — concert movies and other live-event releases sold through spwn.jp. Jellyfin calls into the plugin during library scans (and on demand from the Identify dialog) to fetch event titles, performer lists, descriptions, dates, and backdrop artwork.
 
-The project was forked from `jellyfin/jellyfin-plugin-template` (see the initial commit). Most of the scaffolding — `Plugin.cs`, `PluginConfiguration.cs`, `configPage.html` — is still the unmodified template plumbing; the spwn.jp integration itself has not been implemented yet.
+The project was forked from `jellyfin/jellyfin-plugin-template` (see the initial commit) and the workflow is fully wired end-to-end. Three projects:
+- **`Jellyfin.Plugin.Spwnjp.Core/`** — Jellyfin-independent library (HtmlAgilityPack only). Owns page fetching, parsing, models, and the `SpwnClient` facade.
+- **`Jellyfin.Plugin.Spwnjp/`** — the actual Jellyfin plugin. Configuration + three provider adapters in `Providers/`. References Core.
+- **`Jellyfin.Plugin.Spwnjp.Cli/`** — `dotnet run` harness for testing the same code paths without Jellyfin. References Core only.
 
-## Architecture (planned)
+## Architecture
 
-The plugin needs to fetch spwn.jp pages and parse the resulting HTML for event metadata. Page fetching has two interchangeable backends, selected at runtime by config:
+The plugin fetches spwn.jp pages and parses the resulting HTML for event metadata. Page fetching has two interchangeable backends, selected at runtime by config:
 
 ```
 Jellyfin ──> SpwnjpMetadataProvider ──> IPageFetcher ──> spwn.jp
@@ -21,23 +24,24 @@ Jellyfin ──> SpwnjpMetadataProvider ──> IPageFetcher ──> spwn.jp
 
 Headless-shell is **optional**. spwn.jp is a Firebase-backed SPA, so some pages won't have their event data in the raw HTTP response — the headless path exists to recover those pages by returning the post-render DOM. If `Configuration.HeadlessShellUrl` is empty or whitespace, the plugin uses a plain `HttpClient` and lives with whatever the server returns. If the URL is set, the plugin must use it (and surface an error if it's unreachable) — falling back silently would hide misconfiguration.
 
-Concrete pieces this implies:
+Concrete pieces (implemented):
 
-- **Abstraction.** A single `IPageFetcher` (or equivalent) with one method along the lines of `Task<string> FetchHtmlAsync(Uri url, CancellationToken ct)`. Two implementations behind that interface; choose by reading `Plugin.Instance!.Configuration.HeadlessShellUrl` at construction. Constructor-inject `IHttpClientFactory` from Jellyfin's DI for the direct path.
-- **Headless-shell client.** A thin Chrome DevTools Protocol client over WebSocket: open a target on the requested URL, wait for the page to settle, evaluate `document.documentElement.outerHTML`, close the target. The base URL is whatever the user configured. Reachability/validity is checked with `GET /json/version` — that endpoint returns the standard Chrome DevTools version JSON; treat a 2xx with a parseable body as "valid."
-- **Search.** `https://spwn.jp/search?keyword=<keyword>` returns the event search results page. Fed by a keyword derived from the item's filename when Jellyfin asks for search results.
-- **Event detail.** `https://spwn.jp/events/<event-id>` (e.g. `evt_qB2HIXL5QZpwoeqcAKRD`) is the canonical event page. Fed directly when the user has pinned an event ID, or via the URL from a chosen search result.
-- **Images.** Image URLs on the event page have the form `https://public-web.spwn.jp/events/<uuid>_1280x720`. These are plain CDN assets — a direct `GET` returns the bytes, no JS rendering needed, so the headless path doesn't apply. (It's not really an option either: headless-shell is a browser controlled over CDP, not a generic byte proxy. Pulling image bytes through it would mean wiring up `Network.getResponseBody` after a navigation just to retrieve what a one-line `HttpClient.GetAsync` already gives you.) Jellyfin's `IRemoteImageProvider.GetImageResponse` expects an `HttpClient`-style fetch anyway. Drop the `_1280x720` suffix to fetch original resolution.
+- **Abstraction.** `Core/IPageFetcher.cs` — single method `FetchHtmlAsync(Uri, CT) → PageFetchResult`. Two implementations: `DirectPageFetcher` and `CdpPageFetcher`. Selected at fetcher construction by `Providers/PageFetcherFactory.cs` reading `Plugin.Instance.Configuration.HeadlessShellUrl`.
+- **Headless-shell client.** `Core/CdpPageFetcher.cs` drives CDP over WebSocket: `PUT /json/new?<url>`, connect to the returned `webSocketDebuggerUrl`, evaluate `document.documentElement.outerHTML`, `GET /json/close/<id>`. The host portion of the WS URL is rewritten to the configured base URL's host so the fetcher works when headless-shell isn't on localhost. Reachability checked via `GET /json/version`. **Settle wait is currently a fixed 12s `Task.Delay` — TODO in code to replace with selector polling.**
+- **Search.** `Core/Urls.SearchUrl(keyword)` builds `https://spwn.jp/search?keyword=<kw>`. Parsed by `Core/Parsing/SearchPageParser.cs` — anchors on `aria-label="イベント検索結果一覧"` and `<a href="/events/evt_…">`. Returns `SpwnSearchResult[]`.
+- **Event detail.** `Core/Urls.EventUrl(eventId)`. Parsed by `Core/Parsing/EventPageParser.cs` — anchors on the public-web.spwn.jp image src pattern (for title via alt + backdrop URL), `id="act_info"` (for the performer list), `translate-this-block` class (for description), and a `\d{4}/\d{2}/\d{2}` regex (for date).
+- **Image URL normalisation.** `Core/Parsing/ImageUrl.StripSizeSuffix` strips the `_WIDTHxHEIGHT` suffix to fetch original-resolution CDN assets.
+- **High-level facade.** `Core/SpwnClient.cs` — `GetEventAsync(id)` and `SearchAsync(keyword)`. Consumed identically by the CLI harness and the Jellyfin providers.
 
 ## Jellyfin provider wiring
 
-The plugin needs to register with Jellyfin's metadata pipeline as three things, all auto-discovered by reflection on plugin load:
+The plugin registers three things with Jellyfin's metadata pipeline, all in `Jellyfin.Plugin.Spwnjp/Providers/` and auto-discovered by reflection on plugin load:
 
-1. **`IRemoteMetadataProvider<Movie, MovieInfo>`** — `GetSearchResults(MovieInfo, …)` runs the filename search; `GetMetadata(MovieInfo, …)` resolves the event detail page and populates a `MetadataResult<Movie>`. If `info.ProviderIds["Spwnjp"]` is set, skip the search and go straight to the detail page.
-2. **`IRemoteImageProvider`** — supplies the backdrop image URL. `GetImages` returns one `RemoteImageInfo` with `Type = ImageType.Backdrop` and the original-resolution URL.
-3. **`IExternalId`** — registers `Spwnjp` (or whatever string is chosen as the provider key) as a known external ID. This surfaces the **Spwn event ID** field on the metadata edit page in the web UI. The string typed there flows into `MovieInfo.ProviderIds[<key>]` on subsequent metadata calls.
+1. **`SpwnjpMetadataProvider : IRemoteMetadataProvider<Movie, MovieInfo>`** — `GetSearchResults` returns the pinned event directly if `info.ProviderIds["Spwnjp"]` is set, otherwise runs a keyword search using `searchInfo.Name`. `GetMetadata` resolves the event-detail page and populates `MetadataResult<Movie>` with `Name`, `Tagline`, `Overview`, `PremiereDate`, `ProductionYear`, plus one `PersonInfo { Type = PersonKind.Actor }` per performer.
+2. **`SpwnjpImageProvider : IRemoteImageProvider`** — returns one `RemoteImageInfo { Type = Backdrop }` with the original-resolution URL. `GetImageResponse` uses a plain `HttpClient` from `IHttpClientFactory` (CDN GET; never CDP).
+3. **`SpwnjpExternalId : IExternalId`** — registers `Spwnjp` as a movie external id (`ExternalIdMediaType.Movie`), surfacing the **Spwn event ID** field on the metadata edit page.
 
-All three must use the **same key string** (case sensitive) for the `ProviderIds` dictionary lookup to work end-to-end. Constant it once in the plugin.
+All three pull the provider key (`"Spwnjp"`) from `SpwnjpConstants.ProviderKey` — never hardcode it inline.
 
 ## Metadata field mapping
 
@@ -62,6 +66,26 @@ Built artifacts land in `Jellyfin.Plugin.Spwnjp/bin/Debug/net9.0/publish/`. To r
 
 There are no unit tests in this repo yet. CI (`.github/workflows/`) delegates build/test to the shared `jellyfin/jellyfin-meta-plugins` workflows.
 
+## CLI dev harness
+
+`Jellyfin.Plugin.Spwnjp.Cli/` is the iterative-dev driver — exercises the same `IPageFetcher`/`SpwnClient` code paths the Jellyfin providers wrap, without needing a running Jellyfin. Three subcommands:
+
+```bash
+# fetch and parse an event detail page (default: direct HTTP)
+dotnet run --project Jellyfin.Plugin.Spwnjp.Cli -- event evt_qB2HIXL5QZpwoeqcAKRD
+
+# run a search
+dotnet run --project Jellyfin.Plugin.Spwnjp.Cli -- search <keyword>
+
+# fetch raw HTML (no parsing) — for debugging the page shape
+dotnet run --project Jellyfin.Plugin.Spwnjp.Cli -- fetch <url>
+
+# route through headless-shell for the SPA-only pages
+SPWNJP_HEADLESS_URL=http://localhost:9222 dotnet run --project Jellyfin.Plugin.Spwnjp.Cli -- event <id>
+```
+
+Direct HTTP returns a bootstrap shell for event/search pages (data hydrated client-side). CDP path returns ~50× more HTML on event pages and is where the parser is meant to operate. Direct-on-search will reasonably return 0 results — that's not a bug, it's the case headless-shell exists to fix.
+
 ## Version coupling (easy to get wrong)
 
 Three files reference framework / ABI versions that must stay consistent, but they currently disagree — when bumping, update **all of them together**:
@@ -77,7 +101,7 @@ Three files reference framework / ABI versions that must stay consistent, but th
 Three pieces wire a Jellyfin plugin together:
 
 1. **`Plugin.cs`** — inherits `BasePlugin<PluginConfiguration>`. Exposes `Name`, a stable `Id` GUID, and a static `Instance` singleton set in the constructor (the standard Jellyfin pattern — other classes read config via `Plugin.Instance!.Configuration`). The `Id` here (`1665ca06-677c-4f4e-9292-72552207d00e`) must match `guid:` in `build.yaml` and `pluginUniqueId` in `configPage.html`.
-2. **`Configuration/PluginConfiguration.cs`** — inherits `BasePluginConfiguration`. Public properties become serialized settings. Defaults set in the constructor apply when no saved config exists. The headless-shell URL field will live here.
+2. **`Configuration/PluginConfiguration.cs`** — inherits `BasePluginConfiguration`. Public properties become serialized settings. Defaults set in the constructor apply when no saved config exists. Currently has a single `HeadlessShellUrl` string.
 3. **`Configuration/configPage.html`** — the settings page rendered in the Jellyfin dashboard. Implementing `IHasWebPages` on `Plugin` and returning a `PluginPageInfo` with `EmbeddedResourcePath = "{Namespace}.Configuration.configPage.html"` registers it. The `.csproj` marks the file as `<EmbeddedResource>`.
 
 If the settings button doesn't appear in Jellyfin, the most common causes are: missing `IHasWebPages` implementation, the HTML not embedded, the resource path string not matching the namespace, or the DLL not actually deployed.
