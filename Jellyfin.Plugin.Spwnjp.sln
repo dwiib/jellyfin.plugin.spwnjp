@@ -1,6 +1,10 @@
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-#
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Jellyfin.Plugin.Spwnjp", "Jellyfin.Plugin.Spwnjp\Jellyfin.Plugin.Spwnjp.csproj", "{D921B930-CF91-406F-ACBC-08914DCD0D34}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Jellyfin.Plugin.Spwnjp.Core", "Jellyfin.Plugin.Spwnjp.Core\Jellyfin.Plugin.Spwnjp.Core.csproj", "{B230C882-47C1-4B32-B065-AC49C60BFC9D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Jellyfin.Plugin.Spwnjp.Cli", "Jellyfin.Plugin.Spwnjp.Cli\Jellyfin.Plugin.Spwnjp.Cli.csproj", "{4FD448FB-F7DC-4D47-AA74-A5CA138918AA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -12,7 +16,7 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-        {D921B930-CF91-406F-ACBC-08914DCD0D34}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D921B930-CF91-406F-ACBC-08914DCD0D34}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{D921B930-CF91-406F-ACBC-08914DCD0D34}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D921B930-CF91-406F-ACBC-08914DCD0D34}.Debug|x64.ActiveCfg = Debug|Any CPU
 		{D921B930-CF91-406F-ACBC-08914DCD0D34}.Debug|x64.Build.0 = Debug|Any CPU
@@ -24,5 +28,32 @@ Global
 		{D921B930-CF91-406F-ACBC-08914DCD0D34}.Release|x64.Build.0 = Release|Any CPU
 		{D921B930-CF91-406F-ACBC-08914DCD0D34}.Release|x86.ActiveCfg = Release|Any CPU
 		{D921B930-CF91-406F-ACBC-08914DCD0D34}.Release|x86.Build.0 = Release|Any CPU
+		{B230C882-47C1-4B32-B065-AC49C60BFC9D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B230C882-47C1-4B32-B065-AC49C60BFC9D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B230C882-47C1-4B32-B065-AC49C60BFC9D}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B230C882-47C1-4B32-B065-AC49C60BFC9D}.Debug|x64.Build.0 = Debug|Any CPU
+		{B230C882-47C1-4B32-B065-AC49C60BFC9D}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{B230C882-47C1-4B32-B065-AC49C60BFC9D}.Debug|x86.Build.0 = Debug|Any CPU
+		{B230C882-47C1-4B32-B065-AC49C60BFC9D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B230C882-47C1-4B32-B065-AC49C60BFC9D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B230C882-47C1-4B32-B065-AC49C60BFC9D}.Release|x64.ActiveCfg = Release|Any CPU
+		{B230C882-47C1-4B32-B065-AC49C60BFC9D}.Release|x64.Build.0 = Release|Any CPU
+		{B230C882-47C1-4B32-B065-AC49C60BFC9D}.Release|x86.ActiveCfg = Release|Any CPU
+		{B230C882-47C1-4B32-B065-AC49C60BFC9D}.Release|x86.Build.0 = Release|Any CPU
+		{4FD448FB-F7DC-4D47-AA74-A5CA138918AA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4FD448FB-F7DC-4D47-AA74-A5CA138918AA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4FD448FB-F7DC-4D47-AA74-A5CA138918AA}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{4FD448FB-F7DC-4D47-AA74-A5CA138918AA}.Debug|x64.Build.0 = Debug|Any CPU
+		{4FD448FB-F7DC-4D47-AA74-A5CA138918AA}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{4FD448FB-F7DC-4D47-AA74-A5CA138918AA}.Debug|x86.Build.0 = Debug|Any CPU
+		{4FD448FB-F7DC-4D47-AA74-A5CA138918AA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4FD448FB-F7DC-4D47-AA74-A5CA138918AA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4FD448FB-F7DC-4D47-AA74-A5CA138918AA}.Release|x64.ActiveCfg = Release|Any CPU
+		{4FD448FB-F7DC-4D47-AA74-A5CA138918AA}.Release|x64.Build.0 = Release|Any CPU
+		{4FD448FB-F7DC-4D47-AA74-A5CA138918AA}.Release|x86.ActiveCfg = Release|Any CPU
+		{4FD448FB-F7DC-4D47-AA74-A5CA138918AA}.Release|x86.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
 	EndGlobalSection
 EndGlobal
