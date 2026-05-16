@@ -3,23 +3,7 @@ using MediaBrowser.Model.Plugins;
 namespace Jellyfin.Plugin.Spwnjp.Configuration;
 
 /// <summary>
-/// The configuration options.
-/// </summary>
-public enum SomeOptions
-{
-    /// <summary>
-    /// Option one.
-    /// </summary>
-    OneOption,
-
-    /// <summary>
-    /// Second option.
-    /// </summary>
-    AnotherOption
-}
-
-/// <summary>
-/// Plugin configuration.
+/// Persisted settings for the Spwnjp plugin.
 /// </summary>
 public class PluginConfiguration : BasePluginConfiguration
 {
@@ -28,30 +12,13 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public PluginConfiguration()
     {
-        // set default options here
-        Options = SomeOptions.AnotherOption;
-        TrueFalseSetting = true;
-        AnInteger = 2;
-        AString = "string";
+        HeadlessShellUrl = string.Empty;
     }
 
     /// <summary>
-    /// Gets or sets a value indicating whether some true or false setting is enabled..
+    /// Gets or sets the optional base URL of a headless-shell instance used to render
+    /// spwn.jp pages before scraping. When empty, the plugin falls back to direct
+    /// HTTP fetches. Example: <c>http://localhost:9222</c>.
     /// </summary>
-    public bool TrueFalseSetting { get; set; }
-
-    /// <summary>
-    /// Gets or sets an integer setting.
-    /// </summary>
-    public int AnInteger { get; set; }
-
-    /// <summary>
-    /// Gets or sets a string setting.
-    /// </summary>
-    public string AString { get; set; }
-
-    /// <summary>
-    /// Gets or sets an enum option.
-    /// </summary>
-    public SomeOptions Options { get; set; }
+    public string HeadlessShellUrl { get; set; }
 }
