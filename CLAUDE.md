@@ -10,21 +10,24 @@ The project was forked from `jellyfin/jellyfin-plugin-template` (see the initial
 
 ## Architecture (planned)
 
-spwn.jp pages are rendered client-side via Firebase, so the HTML you get from a direct `HttpClient.GetAsync` is just a bootstrapping shell with no event data. The plugin therefore relies on a user-supplied **headless-shell** instance to render every page server-side and return the post-render DOM. Architecture in one paragraph:
+The plugin needs to fetch spwn.jp pages and parse the resulting HTML for event metadata. Page fetching has two interchangeable backends, selected at runtime by config:
 
 ```
-Jellyfin ──> SpwnjpMetadataProvider ──> headless-shell (configured URL)
-                                             │
-                                             ▼ renders the page, returns HTML
-                                        spwn.jp (Firebase-backed SPA)
+Jellyfin ──> SpwnjpMetadataProvider ──> IPageFetcher ──> spwn.jp
+                                            │
+                                            ├── direct HttpClient   (default; HeadlessShellUrl unset)
+                                            └── headless-shell CDP  (when HeadlessShellUrl is configured)
 ```
+
+Headless-shell is **optional**. spwn.jp is a Firebase-backed SPA, so some pages won't have their event data in the raw HTTP response — the headless path exists to recover those pages by returning the post-render DOM. If `Configuration.HeadlessShellUrl` is empty or whitespace, the plugin uses a plain `HttpClient` and lives with whatever the server returns. If the URL is set, the plugin must use it (and surface an error if it's unreachable) — falling back silently would hide misconfiguration.
 
 Concrete pieces this implies:
 
+- **Abstraction.** A single `IPageFetcher` (or equivalent) with one method along the lines of `Task<string> FetchHtmlAsync(Uri url, CancellationToken ct)`. Two implementations behind that interface; choose by reading `Plugin.Instance!.Configuration.HeadlessShellUrl` at construction. Constructor-inject `IHttpClientFactory` from Jellyfin's DI for the direct path.
 - **Headless-shell client.** A thin Chrome DevTools Protocol client over WebSocket: open a target on the requested URL, wait for the page to settle, evaluate `document.documentElement.outerHTML`, close the target. The base URL is whatever the user configured. Reachability/validity is checked with `GET /json/version` — that endpoint returns the standard Chrome DevTools version JSON; treat a 2xx with a parseable body as "valid."
 - **Search.** `https://spwn.jp/search?keyword=<keyword>` returns the event search results page. Fed by a keyword derived from the item's filename when Jellyfin asks for search results.
 - **Event detail.** `https://spwn.jp/events/<event-id>` (e.g. `evt_qB2HIXL5QZpwoeqcAKRD`) is the canonical event page. Fed directly when the user has pinned an event ID, or via the URL from a chosen search result.
-- **Images.** Image URLs on the event page have the form `https://public-web.spwn.jp/events/<uuid>_1280x720`. These are direct CDN assets — **do not** route image fetches through headless-shell. Drop the `_1280x720` suffix to fetch original resolution.
+- **Images.** Image URLs on the event page have the form `https://public-web.spwn.jp/events/<uuid>_1280x720`. These are direct CDN assets — **always** fetch them with the direct `HttpClient`, never through headless-shell, regardless of the config setting. Drop the `_1280x720` suffix to fetch original resolution.
 
 ## Jellyfin provider wiring
 

@@ -4,18 +4,17 @@ A Jellyfin metadata provider for [spwn.jp](https://spwn.jp) events — primarily
 
 ## How it works
 
-spwn.jp pages are rendered client-side (Firebase-backed), so a plain HTTP fetch returns markup with no event data in it. The plugin solves this by routing every page request through a user-supplied [headless-shell](https://github.com/chromedp/docker-headless-shell) instance, then parsing the rendered HTML it gets back. You run headless-shell yourself (typically as a Docker container on the same host as Jellyfin) and point the plugin at it.
+The plugin fetches spwn.jp pages and parses them for event metadata. By default it uses a regular HTTP client. Because spwn.jp is a Firebase-backed single-page app, some pages don't expose their event data in the raw HTTP response — to handle that, the plugin can **optionally** route page fetches through a user-supplied [headless-shell](https://github.com/chromedp/docker-headless-shell) instance and parse the post-render DOM. If you don't configure one, the plugin just uses the direct HTTP fetch.
 
 ## Requirements
 
 - Jellyfin server 10.9.x.
-- A reachable headless-shell instance you control. The plugin validates the URL by issuing `GET /json/version`; if that responds with the standard Chrome DevTools version payload, the URL is considered valid.
 
 ## Configuration
 
-In **Dashboard → Plugins → Spwnjp**, set:
+In **Dashboard → Plugins → Spwnjp**:
 
-- **Headless shell URL** — base URL of your headless-shell instance (for example `http://localhost:9222`). Saved settings are validated against `/json/version` before the rest of the plugin will use them.
+- **Headless shell URL** *(optional)* — base URL of a headless-shell instance you control, for example `http://localhost:9222`. Leave it empty to use direct HTTP fetches. When set, the plugin validates the URL by issuing `GET /json/version` (the standard Chrome DevTools version endpoint) and routes all page fetches through it; if the URL is set but unreachable, the plugin treats that as a configuration error rather than silently falling back.
 
 ## Usage
 
