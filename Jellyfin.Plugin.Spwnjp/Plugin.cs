@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using Jellyfin.Plugin.Template.Configuration;
+using Jellyfin.Plugin.Spwnjp.Configuration;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
 
-namespace Jellyfin.Plugin.Template;
+namespace Jellyfin.Plugin.Spwnjp;
 
 /// <summary>
 /// The main plugin.
@@ -26,10 +26,10 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     }
 
     /// <inheritdoc />
-    public override string Name => "Template";
+    public override string Name => "Spwnjp";
 
     /// <inheritdoc />
-    public override Guid Id => Guid.Parse("eb5d7894-8eef-4b36-aa6f-5d124e828ce1");
+    public override Guid Id => Guid.Parse("1665ca06-677c-4f4e-9292-72552207d00e");
 
     /// <summary>
     /// Gets the current plugin instance.

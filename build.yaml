@@ -1,16 +1,16 @@
 ---
-name: "Template"
-guid: "eb5d7894-8eef-4b36-aa6f-5d124e828ce1"
+name: "Spwnjp"
+guid: "1665ca06-677c-4f4e-9292-72552207d00e"
 version: "1.0.0.0"
 targetAbi: "10.9.0.0"
 framework: "net8.0"
-overview: "Short description about your plugin"
+overview: "Metadata provider for spwn.jp event lookups"
 description: >
-  This is a longer description that can span more than one
-  line and include details about your plugin.
-category: "General"
-owner: "jellyfin"
+  Provides Jellyfin with metadata for spwn.jp events (concert movies and
+  similar event-based media) by searching the spwn.jp catalog.
+category: "Metadata"
+owner: "Richard Dwi"
 artifacts:
-- "Jellyfin.Plugin.Template.dll"
+- "Jellyfin.Plugin.Spwnjp.dll"
 changelog: >
   changelog
