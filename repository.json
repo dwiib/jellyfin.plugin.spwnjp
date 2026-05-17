@@ -1,1 +1,20 @@
-[]
+[
+  {
+    "category": "Metadata",
+    "description": "Provides Jellyfin with metadata for spwn.jp events (concert movies and similar event-based media) by searching the spwn.jp catalog.\n",
+    "guid": "1665ca06-677c-4f4e-9292-72552207d00e",
+    "name": "Spwnjp",
+    "overview": "Metadata provider for spwn.jp event lookups",
+    "owner": "Richard Dwi",
+    "versions": [
+      {
+        "changelog": "**Full Changelog**: https://github.com/Dwiib/Jellyfin.Plugin.Spwnjp/commits/v1.0.0.0",
+        "checksum": "018881a1e4c1ef6314962c16636a465a",
+        "sourceUrl": "https://github.com/Dwiib/Jellyfin.Plugin.Spwnjp/releases/download/v1.0.0.0/spwnjp_1.0.0.0.zip",
+        "targetAbi": "10.10.0.0",
+        "timestamp": "2026-05-17T02:25:26Z",
+        "version": "1.0.0.0"
+      }
+    ]
+  }
+]
