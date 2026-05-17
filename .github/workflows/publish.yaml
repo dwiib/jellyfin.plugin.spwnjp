@@ -1,18 +1,27 @@
 name: Publish Release
 
-# Builds the single merged plugin DLL and attaches it to the release that
-# triggered this workflow. To cut a release: tag + 'gh release create' (or
-# create the release in the GitHub UI). This workflow runs on 'published'
-# so it also fires for releases promoted from draft state.
+# On every published GitHub release: build the plugin DLL, package it as a
+# Jellyfin-installable zip with an MD5 sibling, attach both to the release,
+# then update the repository.json on the gh-pages branch so the Jellyfin
+# plugin-repo URL stays in sync.
+#
+# The Jellyfin plugin repo URL users add to Dashboard → Plugins → Repositories:
+#   https://dwiib.github.io/Jellyfin.Plugin.Spwnjp/repository.json
+#
+# One-time setup: in Settings → Pages, enable Pages from the gh-pages branch
+# (root). Kevinjil's action creates that branch on first publish if it doesn't
+# already exist.
+
 on:
   release:
     types: [published]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -23,13 +32,59 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
+      # Pull the version from build.yaml so the zip filename and the eventual
+      # manifest entry agree. Tag name isn't used — build.yaml is the source
+      # of truth (Kevinjil's action reads the same file at the tag).
+      - name: Read plugin version from build.yaml
+        id: meta
+        run: |
+          version=$(grep -E '^version:' build.yaml | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ -z "$version" ]; then
+            echo "::error::Could not parse version from build.yaml" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version: $version"
+
+      # ILRepack runs at the AfterTargets="Publish" step of this csproj; the
+      # publish folder ends up with a single Jellyfin.Plugin.Spwnjp.dll.
       - name: Publish plugin DLL
         run: dotnet publish Jellyfin.Plugin.Spwnjp/Jellyfin.Plugin.Spwnjp.csproj
              --configuration Release
-             --output ./artifact
+             --output ./out
 
-      - name: Attach plugin DLL to release
+      # Jellyfin expects to download a zip containing the plugin files, NOT
+      # a bare DLL. zip -j drops paths so the DLL lands at zip root.
+      - name: Package zip + MD5
+        run: |
+          mkdir -p artifact
+          zip="spwnjp_${{ steps.meta.outputs.version }}.zip"
+          (cd out && zip -j "../artifact/$zip" Jellyfin.Plugin.Spwnjp.dll)
+          (cd artifact && md5sum "$zip" > "$zip.md5")
+          ls -la artifact/
+
+      - name: Attach zip + MD5 to release
         uses: softprops/action-gh-release@v2
         with:
-          files: ./artifact/Jellyfin.Plugin.Spwnjp.dll
+          files: |
+            artifact/*.zip
+            artifact/*.md5
           fail_on_unmatched_files: true
+
+  # Refresh repository.json on the gh-pages branch using the canonical
+  # community action. It queries the GitHub releases API, picks the .zip
+  # asset and the .md5 sibling, and reads build.yaml at each release tag
+  # to fill in name / overview / description / category / owner / targetAbi.
+  # ignorePrereleases keeps prereleases out of the public manifest while
+  # still allowing the build job above to attach assets for testing.
+  manifest:
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.release.prerelease }}
+    steps:
+      - name: Update repository.json on gh-pages
+        uses: Kevinjil/jellyfin-plugin-repo-action@v0.4.3
+        with:
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          ignorePrereleases: 'true'

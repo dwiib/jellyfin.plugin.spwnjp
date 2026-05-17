@@ -66,6 +66,19 @@ Built artifacts land in `Jellyfin.Plugin.Spwnjp/bin/Debug/net9.0/publish/`. To r
 
 The plugin csproj runs **ILRepack** at the `Publish` target to merge `Jellyfin.Plugin.Spwnjp.Core.dll` and `HtmlAgilityPack.dll` into the main plugin assembly, with `Internalize=true` so the merged types don't collide with another plugin that pulls the same packages. The publish folder ends up with a single `Jellyfin.Plugin.Spwnjp.dll` (plus the stock `.pdb`, `.xml`, `.deps.json`). This is needed because Jellyfin's per-plugin `AssemblyLoadContext` doesn't reliably resolve transitive NuGet dependencies dropped alongside the plugin DLL. Day-to-day `dotnet build` keeps DLLs separate (faster incremental, simpler CLI debug).
 
+## Release pipeline
+
+`.github/workflows/publish.yaml` fires on every published GitHub release:
+
+1. Build the plugin (ILRepack → single DLL).
+2. Wrap the DLL in `spwnjp_<version>.zip` and generate `spwnjp_<version>.zip.md5` (`<hash>  <filename>` format — what `Kevinjil/jellyfin-plugin-repo-action` expects).
+3. Attach both to the release.
+4. Run `Kevinjil/jellyfin-plugin-repo-action@v0.4.3` to refresh `repository.json` on the `gh-pages` branch. The action queries the GitHub releases API, picks the `.zip` and `.md5` from each release's assets, reads `build.yaml` at the release tag, and rewrites the manifest. Stable releases only — `ignorePrereleases: true` plus an `if:` guard on the job.
+
+Per-release process: bump `build.yaml`'s `version` to match the tag, write release notes (they become the per-version `changelog` in the manifest), publish the release in the GitHub UI. The workflow handles the rest.
+
+End-user install URL: `https://dwiib.github.io/Jellyfin.Plugin.Spwnjp/repository.json`. Requires GitHub Pages to be enabled from the `gh-pages` branch (one-time, Settings → Pages).
+
 There are no unit tests in this repo yet. CI (`.github/workflows/`) delegates build/test to the shared `jellyfin/jellyfin-meta-plugins` workflows.
 
 ## CLI dev harness

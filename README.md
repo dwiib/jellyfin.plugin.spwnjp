@@ -8,7 +8,17 @@ The plugin fetches spwn.jp pages and parses them for event metadata. By default 
 
 ## Requirements
 
-- Jellyfin server 10.9.x.
+- Jellyfin server 10.10.x.
+
+## Installing
+
+In Jellyfin: **Dashboard → Plugins → Repositories → +** and paste:
+
+```
+https://dwiib.github.io/Jellyfin.Plugin.Spwnjp/repository.json
+```
+
+Then **Dashboard → Plugins → Catalog → Metadata → Spwnjp → Install**, and restart Jellyfin. Updates appear in the catalog as new versions land in the manifest.
 
 ## Configuration
 
