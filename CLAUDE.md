@@ -64,6 +64,8 @@ dotnet publish --configuration=Debug Jellyfin.Plugin.Spwnjp.sln \
 
 Built artifacts land in `Jellyfin.Plugin.Spwnjp/bin/Debug/net9.0/publish/`. To run, copy the contents into a Jellyfin plugins subfolder (Linux: `$HOME/.local/share/jellyfin/plugins/Jellyfin.Plugin.Spwnjp/`, Windows: `%LOCALAPPDATA%/jellyfin/plugins/Jellyfin.Plugin.Spwnjp/`), then restart Jellyfin. The VS Code `build-and-copy` task in `.vscode/tasks.json` automates this — paths are configured by `pluginName`, `jellyfinLinuxDataDir`, and `jellyfinWindowsDataDir` in `.vscode/settings.json`.
 
+The plugin csproj runs **ILRepack** at the `Publish` target to merge `Jellyfin.Plugin.Spwnjp.Core.dll` and `HtmlAgilityPack.dll` into the main plugin assembly, with `Internalize=true` so the merged types don't collide with another plugin that pulls the same packages. The publish folder ends up with a single `Jellyfin.Plugin.Spwnjp.dll` (plus the stock `.pdb`, `.xml`, `.deps.json`). This is needed because Jellyfin's per-plugin `AssemblyLoadContext` doesn't reliably resolve transitive NuGet dependencies dropped alongside the plugin DLL. Day-to-day `dotnet build` keeps DLLs separate (faster incremental, simpler CLI debug).
+
 There are no unit tests in this repo yet. CI (`.github/workflows/`) delegates build/test to the shared `jellyfin/jellyfin-meta-plugins` workflows.
 
 ## CLI dev harness
@@ -90,8 +92,8 @@ Direct HTTP returns a bootstrap shell for event/search pages (data hydrated clie
 
 Three files reference framework / ABI versions that must stay consistent, but they currently disagree — when bumping, update **all of them together**:
 
-- `Jellyfin.Plugin.Spwnjp/Jellyfin.Plugin.Spwnjp.csproj` — `<TargetFramework>` (currently `net9.0`) and the `Jellyfin.Controller` / `Jellyfin.Model` PackageReference versions (currently `10.9.11`). The Controller version must match the **installed Jellyfin server version**, or the plugin loads as `NotSupported`.
-- `build.yaml` — `framework` (currently `net8.0` — mismatches the csproj) and `targetAbi` (`10.9.0.0`).
+- `Jellyfin.Plugin.Spwnjp/Jellyfin.Plugin.Spwnjp.csproj` — `<TargetFramework>` (currently `net9.0`) and the `Jellyfin.Controller` / `Jellyfin.Model` PackageReference versions (currently `10.10.7`). The Controller version must match the **installed Jellyfin server version**, or the plugin loads as `NotSupported`.
+- `build.yaml` — `framework` (currently `net9.0`) and `targetAbi` (currently `10.10.0.0`).
 - `.vscode/tasks.json` — `copy-dll` reads from `bin/Debug/net9.0/publish/`, so the framework moniker is hardcoded here too.
 
 `PackageReference` entries for `Jellyfin.Controller` / `Jellyfin.Model` must include `<ExcludeAssets>runtime</ExcludeAssets>` — otherwise Jellyfin's own assemblies get copied into the plugin folder and the plugin fails to register.
