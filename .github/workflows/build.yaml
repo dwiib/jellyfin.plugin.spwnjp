@@ -1,18 +1,47 @@
-name: '🏗️ Build Plugin'
+name: Build
 
 on:
   push:
-    branches:
-      - master
+    branches: [master]
     paths-ignore:
       - '**/*.md'
   pull_request:
-    branches:
-      - master
+    branches: [master]
     paths-ignore:
       - '**/*.md'
   workflow_dispatch:
 
 jobs:
-  call:
-    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/build.yaml@master
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      # The whole solution build is a cheap CI gate: it type-checks the CLI
+      # harness too, which the publish step alone wouldn't.
+      - name: Build solution
+        run: dotnet build Jellyfin.Plugin.Spwnjp.sln --configuration Release
+
+      # `dotnet publish` invokes the AfterTargets="Publish" target defined in
+      # Jellyfin.Plugin.Spwnjp.csproj, which is where ILRepack merges
+      # Jellyfin.Plugin.Spwnjp.Core.dll and HtmlAgilityPack.dll into the main
+      # plugin DLL. The publish folder ends up with a single
+      # Jellyfin.Plugin.Spwnjp.dll ready to drop into a Jellyfin plugins dir.
+      - name: Publish plugin DLL
+        run: dotnet publish Jellyfin.Plugin.Spwnjp/Jellyfin.Plugin.Spwnjp.csproj
+             --configuration Release
+             --no-build
+             --output ./artifact
+
+      - name: Upload plugin DLL
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jellyfin.Plugin.Spwnjp
+          path: ./artifact/Jellyfin.Plugin.Spwnjp.dll
+          if-no-files-found: error

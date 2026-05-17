@@ -1,18 +1,35 @@
-name: '🚀 Publish Plugin'
+name: Publish Release
 
+# Builds the single merged plugin DLL and attaches it to the release that
+# triggered this workflow. To cut a release: tag + 'gh release create' (or
+# create the release in the GitHub UI). This workflow runs on 'published'
+# so it also fires for releases promoted from draft state.
 on:
   release:
-    types:
-      - released
-  workflow_dispatch:
+    types: [published]
+
+permissions:
+  contents: write
 
 jobs:
-  call:
-    uses: jellyfin/jellyfin-meta-plugins/.github/workflows/publish.yaml@master
-    with:
-      version: ${{ github.event.release.tag_name }}
-      is-unstable: ${{ github.event.release.prerelease }}
-    secrets:
-      deploy-host: ${{ secrets.DEPLOY_HOST }}
-      deploy-user: ${{ secrets.DEPLOY_USER }}
-      deploy-key: ${{ secrets.DEPLOY_KEY }}
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Publish plugin DLL
+        run: dotnet publish Jellyfin.Plugin.Spwnjp/Jellyfin.Plugin.Spwnjp.csproj
+             --configuration Release
+             --output ./artifact
+
+      - name: Attach plugin DLL to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./artifact/Jellyfin.Plugin.Spwnjp.dll
+          fail_on_unmatched_files: true
